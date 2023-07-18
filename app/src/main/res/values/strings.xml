@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">DESCUBRA A DOENÇA</string>
+    <string name="selected_image">Selected Image</string>
+    <string name="result">Resultado: </string>
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+</resources>
