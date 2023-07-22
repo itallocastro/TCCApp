@@ -4,4 +4,6 @@
     <string name="result">Resultado: </string>
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
+
+    <string name="settings_file">com.example.detectmangodisease.settings</string>
 </resources>

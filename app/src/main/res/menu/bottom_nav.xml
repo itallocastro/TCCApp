@@ -6,8 +6,13 @@
         android:title="Página Inicial"
         />
     <item
-        android:id="@+id/item_history"
-        android:icon="@drawable/baseline_history_24"
-        android:title="Histórico"
+        android:id="@+id/item_monitoring"
+        android:icon="@drawable/baseline_analytics_24"
+        android:title="Monitoramento"
+        />
+    <item
+        android:id="@+id/item_settings"
+        android:icon="@drawable/baseline_settings_24"
+        android:title="Configurações"
         />
 </menu>

@@ -1,32 +1,43 @@
 package com.example.detectmangodisease
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.media.ThumbnailUtils
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.PermissionChecker
+import androidx.core.content.PermissionChecker.checkSelfPermission
+import com.example.detectmangodisease.databinding.FragmentHomeBinding
+import com.example.detectmangodisease.ml.ModelSaved
+import org.tensorflow.lite.DataType
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
+import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.*
 
-// TODO: Rename parameter arguments, choose names that match
-// the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
-private const val ARG_PARAM1 = "param1"
-private const val ARG_PARAM2 = "param2"
-
-/**
- * A simple [Fragment] subclass.
- * Use the [HomeFragment.newInstance] factory method to
- * create an instance of this fragment.
- */
 class HomeFragment : Fragment() {
-    // TODO: Rename and change types of parameters
-    private var param1: String? = null
-    private var param2: String? = null
+
+    private lateinit var binding: FragmentHomeBinding
+
+
+    private val imageSize = 256
+
+    private val classes = arrayOf("Anthracnose",
+        "Bacterial Canker", "Cutting Weevil", "Die Back",
+        "Gall Midge", "Healthy", "Powdery Mildew", "Sooty Mould"
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        arguments?.let {
-            param1 = it.getString(ARG_PARAM1)
-            param2 = it.getString(ARG_PARAM2)
-        }
+
     }
 
     override fun onCreateView(
@@ -37,23 +48,97 @@ class HomeFragment : Fragment() {
         return inflater.inflate(R.layout.fragment_home, container, false)
     }
 
-    companion object {
-        /**
-         * Use this factory method to create a new instance of
-         * this fragment using the provided parameters.
-         *
-         * @param param1 Parameter 1.
-         * @param param2 Parameter 2.
-         * @return A new instance of fragment HomeFragment.
-         */
-        // TODO: Rename and change types and number of parameters
-        @JvmStatic
-        fun newInstance(param1: String, param2: String) =
-            HomeFragment().apply {
-                arguments = Bundle().apply {
-                    putString(ARG_PARAM1, param1)
-                    putString(ARG_PARAM2, param2)
-                }
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        binding = FragmentHomeBinding.bind(view)
+
+        binding.takePicture.setOnClickListener {
+            if (checkSelfPermission(requireActivity(), Manifest.permission.CAMERA) == PermissionChecker.PERMISSION_GRANTED) {
+                val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                startActivityForResult(cameraIntent, 3);
+            } else {
+                requestPermissions(arrayOf(Manifest.permission.CAMERA), 100);
             }
+        }
+
+        binding.launchGallery.setOnClickListener {
+            val galleryIntent =
+                Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+            startActivityForResult(galleryIntent, 1)
+        }
+
+        binding.titleResult.text = "Selecione ou tire uma foto"
     }
+    fun classifyImage(image: Bitmap) {
+        val model = ModelSaved.newInstance(requireContext())
+
+        // Creates inputs for reference.
+        val inputFeature0 = TensorBuffer.createFixedSize(intArrayOf(1, imageSize, imageSize, 3), DataType.FLOAT32)
+        val byteBuffer = ByteBuffer.allocateDirect(4 * imageSize * imageSize *3)
+        byteBuffer.order(ByteOrder.nativeOrder())
+
+        val intValues = IntArray(imageSize * imageSize)
+
+        image.getPixels(intValues, 0, image.width, 0, 0, image.width, image.height)
+
+        var pixel = 0
+        for (i in 0 until imageSize) {
+            for (j in 0 until imageSize) {
+                val value = intValues[pixel++]
+                byteBuffer.putFloat((value shr 16 and 0xFF) * (1 / 255f))
+                byteBuffer.putFloat((value shr 8 and 0xFF) * (1 / 255f))
+                byteBuffer.putFloat((value and 0xFF) * (1 / 255f))
+            }
+        }
+        inputFeature0.loadBuffer(byteBuffer)
+
+        // Runs model inference and gets result.
+        val outputs = model.process(inputFeature0)
+        val outputFeature0 = outputs.outputFeature0AsTensorBuffer
+
+        val confidences = outputFeature0.floatArray
+
+        println(Arrays.toString(confidences))
+        val maxValue = confidences.maxOrNull()?:0.0
+        val maxIndex = confidences.indexOfFirst { it == maxValue }
+
+        binding.titleResult.text = "Resultado: "
+        binding.result.text = classes[maxIndex]
+
+        model.close()
+
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if(resultCode == AppCompatActivity.RESULT_OK) {
+            if(requestCode == 3) {
+                var image = data?.extras?.get("data") as Bitmap
+                var dimension = Math.min(image.width, image.height)
+                image = ThumbnailUtils.extractThumbnail(image, dimension, dimension)
+
+                binding.imageView.setImageBitmap(image)
+
+                image = Bitmap.createScaledBitmap(image, imageSize, imageSize, false)
+
+                classifyImage(image)
+            } else {
+                val dat = data?.data
+                var image: Bitmap? = null
+                try {
+                    image = MediaStore.Images.Media.getBitmap(requireActivity().contentResolver, dat) as Bitmap
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+                binding.imageView.setImageBitmap(image)
+
+                if(image != null) {
+                    image = Bitmap.createScaledBitmap(image, imageSize, imageSize, false)
+                    classifyImage(image)
+                }
+
+            }
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
 }
