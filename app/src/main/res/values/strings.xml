@@ -6,4 +6,8 @@
     <string name="hello_blank_fragment">Hello blank fragment</string>
 
     <string name="settings_file">com.example.detectmangodisease.settings</string>
+    <string name="result_plain_mode">com.example.detectmangodisease.resultplainmode</string>
+    <string name="result_wifi">com.example.detectmangodisease.resultwifi</string>
+    <string name="result_four_g">com.example.detectmangodisease.resultfourg</string>
+    <string name="result_three_g">com.example.detectmangodisease.resultthreeg</string>
 </resources>

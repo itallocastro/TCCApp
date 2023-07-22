@@ -1,6 +1,7 @@
 package com.example.detectmangodisease
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -15,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.PermissionChecker
 import androidx.core.content.PermissionChecker.checkSelfPermission
 import com.example.detectmangodisease.databinding.FragmentHomeBinding
+import com.example.detectmangodisease.dto.SettingsDTO
 import com.example.detectmangodisease.ml.ModelSaved
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
@@ -28,6 +30,8 @@ class HomeFragment : Fragment() {
     private lateinit var binding: FragmentHomeBinding
 
 
+    private lateinit var settings: SettingsDTO
+
     private val imageSize = 256
 
     private val classes = arrayOf("Anthracnose",
@@ -37,7 +41,6 @@ class HomeFragment : Fragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
     }
 
     override fun onCreateView(
@@ -68,6 +71,24 @@ class HomeFragment : Fragment() {
         }
 
         binding.titleResult.text = "Selecione ou tire uma foto"
+
+        getSettings()
+    }
+
+    private fun getSettings() {
+        var sharedPref = requireActivity()
+            .getSharedPreferences(getString(R.string.settings_file), Context.MODE_PRIVATE)
+
+        settings = SettingsDTO()
+        settings.modelUsed = SettingsDTO.TypeModel
+            .valueOf(sharedPref.getString("modelUsed", "LOCAL").toString())
+
+        settings.monitored = SettingsDTO.TypeMonitored
+            .valueOf(sharedPref.getString("monitored", "MODE_PLAIN").toString())
+
+        println("---------Settings: ")
+        println(settings.modelUsed.name)
+        println(settings.monitored.name)
     }
     fun classifyImage(image: Bitmap) {
         val model = ModelSaved.newInstance(requireContext())
@@ -141,4 +162,8 @@ class HomeFragment : Fragment() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
+    override fun onDestroyView() {
+        println("----------- Destroyed")
+        super.onDestroyView()
+    }
 }

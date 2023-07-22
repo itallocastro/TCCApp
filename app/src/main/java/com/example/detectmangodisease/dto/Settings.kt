@@ -2,10 +2,34 @@ package com.example.detectmangodisease.dto
 
 class SettingsDTO {
     enum class TypeModel{
-        LOCAL, SERVER
+        LOCAL {override fun toString(): String { return "Local" }},
+        SERVER {
+            override fun toString(): String {
+                return "Servidor"
+            }
+        }
     }
     enum class TypeMonitored {
-        WIFI, FOUR_G, THREE_G, MODE_PLAIN
+        WIFI {
+            override fun toString(): String {
+                return "WiFi"
+            }
+        },
+        FOUR_G {
+            override fun toString(): String {
+                return "4G"
+            }
+        },
+        THREE_G {
+            override fun toString(): String {
+                return "3G"
+            }
+        },
+        MODE_PLAIN {
+            override fun toString(): String {
+                return "Modo Avião"
+            }
+        }
     }
 
     lateinit var modelUsed: TypeModel

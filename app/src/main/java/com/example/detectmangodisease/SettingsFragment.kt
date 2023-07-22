@@ -20,6 +20,8 @@ class SettingsFragment : Fragment() {
 
     private lateinit var sharedPref: SharedPreferences
 
+    private lateinit var radioGroupMonitoredDict: MutableMap<String, Int>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = SettingsDTO()
@@ -46,6 +48,7 @@ class SettingsFragment : Fragment() {
                     setModel(SettingsDTO.TypeModel.LOCAL)
                 }
             }
+            saveSetting("modelUsed", settings.modelUsed.name)
         }
         binding.radioGroupMonitored.setOnCheckedChangeListener { group, checkedId ->
             when(checkedId) {
@@ -57,12 +60,38 @@ class SettingsFragment : Fragment() {
                     settings.monitored = SettingsDTO.TypeMonitored.MODE_PLAIN
                 }
             }
+            saveSetting("monitored", settings.monitored.name)
         }
 
-        binding.radioGroupModel.check(binding.radioGroupModelLocal.id)
-        setModel(SettingsDTO.TypeModel.LOCAL)
+        mapRadioGroupMonitored()
+        getInitSettings()
+    }
 
-        changeRadioGroupMonitored(binding.radioGroupMonitoredPlainMode.id, SettingsDTO.TypeMonitored.MODE_PLAIN)
+    private fun mapRadioGroupMonitored() {
+        radioGroupMonitoredDict = mutableMapOf(
+            SettingsDTO.TypeMonitored.WIFI.name to binding.radioGroupMonitoredWifi.id,
+            SettingsDTO.TypeMonitored.FOUR_G.name to binding.radioGroupMonitoredFourG.id,
+            SettingsDTO.TypeMonitored.THREE_G.name to binding.radioGroupMonitoredThreeG.id,
+            SettingsDTO.TypeMonitored.MODE_PLAIN.name to binding.radioGroupMonitoredPlainMode.id
+        )
+    }
+    private fun getInitSettings() {
+        var sharedPref = requireActivity()
+            .getSharedPreferences(getString(R.string.settings_file), Context.MODE_PRIVATE)
+
+        val typeMonitoredName = sharedPref.getString("monitored", "MODE_PLAIN")
+
+        changeRadioGroupMonitored(
+            radioGroupMonitoredDict[typeMonitoredName] as Int,
+            SettingsDTO.TypeMonitored.valueOf(typeMonitoredName.toString())
+        )
+
+        setModel(
+            SettingsDTO
+                .TypeModel
+                .valueOf(sharedPref.getString("modelUsed", "LOCAL").toString())
+        )
+
     }
 
     private fun changeRadioGroupMonitored(radioButtonIndex: Int, typeMonitored: SettingsDTO.TypeMonitored) {
@@ -93,23 +122,21 @@ class SettingsFragment : Fragment() {
     private fun setModel(typeModel: SettingsDTO.TypeModel) {
         settings.modelUsed = typeModel
         if(typeModel == SettingsDTO.TypeModel.SERVER) {
+            binding.radioGroupModelServer.isChecked = true
             enableRadioButtonPlainMode(false)
         } else {
+            binding.radioGroupModelLocal.isChecked = true
             enableRadioButtonPlainMode(true)
         }
     }
 
-    private fun saveSettings() {
+    private fun saveSetting(key: String, value: String) {
         if(sharedPref != null) {
             with(sharedPref.edit()) {
-                putString("modelUsed", settings.modelUsed.name)
-                putString("monitored", settings.monitored.name)
-                apply()
+                putString(key, value)
+                commit()
             }
         }
     }
-    override fun onDestroyView() {
-        saveSettings()
-        super.onDestroyView()
-    }
+
 }

@@ -16,11 +16,13 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var homeFragment: HomeFragment
     private lateinit var settingsFragment: SettingsFragment
+    private lateinit var monitoringFragment: MonitoringFragment
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         homeFragment = HomeFragment()
         settingsFragment = SettingsFragment()
+        monitoringFragment = MonitoringFragment()
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -32,9 +34,9 @@ class MainActivity : AppCompatActivity() {
         replaceFragment(homeFragment)
 
         binding.bottomNavigation.setOnItemSelectedListener {
-            // TODO mudar para o fragment
             when(it.itemId) {
                 R.id.item_home -> replaceFragment(homeFragment)
+                R.id.item_monitoring -> replaceFragment(monitoringFragment)
                 R.id.item_settings -> replaceFragment(settingsFragment)
                 else -> {
                     Toast.makeText(this, "Home", Toast.LENGTH_SHORT).show()
