@@ -73,11 +73,7 @@ class MonitoringFragment : Fragment() {
             pickImagesIntent()
         }
         binding.testButton.setOnClickListener {
-//            binding.testButton.isEnabled = false
-//            binding.progressBar.isVisible = true
-            test()
-//            monitoringAllImages()
-
+            runImages()
         }
         getSettings()
         setSettingsInFragment()
@@ -189,11 +185,22 @@ class MonitoringFragment : Fragment() {
         saveResults()
     }
 
+    private fun runImages() = runBlocking {
+        binding.testButton.isEnabled = false
+        binding.progressBar.isVisible = true
+        binding.buttonSelect.isEnabled = false
+        GlobalScope.launch(context = Dispatchers.Main) {
+            monitoringAllImages()
+            binding.testButton.isEnabled = true
+            binding.progressBar.isVisible = false
+            binding.buttonSelect.isEnabled = false
+        }
+    }
+
     private fun getFileName(): String {
         if(settings.modelUsed == SettingsDTO.TypeModel.LOCAL) {
             return getString(R.string.result_plain_mode)
         }
-
         var fileName = ""
         if(settings.monitored == SettingsDTO.TypeMonitored.WIFI) {
             fileName = getString(R.string.result_wifi)
@@ -218,22 +225,5 @@ class MonitoringFragment : Fragment() {
                 commit()
             }
         }
-    }
-    fun test() {
-        GlobalScope.launch(context = Dispatchers.Main) {
-
-            var a = doWorkAsync("").await()
-            println(a)
-        }
-    }
-    fun doWorkAsync(msg: String): Deferred<Int> = GlobalScope.async {
-        println("DO WORKKKKKKKKKKK")
-        binding.testButton.isEnabled = false
-        binding.progressBar.isVisible = true
-        monitoringAllImages()
-        println("Finalizou")
-        binding.testButton.isEnabled = true
-        binding.progressBar.isVisible = false
-        return@async 42
     }
 }
