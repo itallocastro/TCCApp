@@ -4,11 +4,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.Context.BATTERY_SERVICE
 import android.content.Intent
-import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.BatteryManager
-import android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY
 import android.os.BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER
 import android.os.Bundle
 import android.provider.MediaStore
@@ -17,20 +15,31 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.isVisible
+import com.example.detectmangodisease.api.IEndpoint
+import com.example.detectmangodisease.api.NetworkUtils
 import com.example.detectmangodisease.databinding.FragmentHomeBinding
 import com.example.detectmangodisease.databinding.FragmentMonitoringBinding
+import com.example.detectmangodisease.dto.ResponsePredict
 import com.example.detectmangodisease.dto.SettingsDTO
 import com.example.detectmangodisease.ml.ModelSaved
 import com.google.gson.Gson
 import kotlinx.coroutines.*
+import okhttp3.MediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
+import retrofit2.Call
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.collections.ArrayList
+import retrofit2.Callback
+import retrofit2.Response
+import retrofit2.http.Multipart
+import java.io.File
 
 class MonitoringFragment : Fragment() {
 
@@ -49,9 +58,6 @@ class MonitoringFragment : Fragment() {
     private var allBatteryCount = ArrayList<Long>()
 
     private var PICK_IMAGES_CODE = 0
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -110,23 +116,24 @@ class MonitoringFragment : Fragment() {
         intent.action = Intent.ACTION_GET_CONTENT
         startActivityForResult(Intent.createChooser(intent, "Selecione as imagens"), PICK_IMAGES_CODE)
     }
-    private fun setSettingsInFragment() {
-        binding.monitoringModelUsedText.text = settings.modelUsed.toString()
-        binding.monitoringText.text = settings.monitored.toString()
+    private suspend fun classifyImageInServer(filePart: RequestBody) {
+//        GlobalScope.launch(context = Dispatchers.IO) {
+            val retrofitClient = NetworkUtils.getRetrofitInstance(
+                "https://354a-2804-14d-1289-a118-8d1-3337-6b15-22a2.ngrok.io/api/"
+            )
+
+            val endpoint = retrofitClient.create(IEndpoint::class.java)
+
+            val response = endpoint.predictImage(filePart)
+            if(response.isSuccessful) {
+                println(response.body())
+            }
+            if(!response.isSuccessful) {
+                println(response.errorBody()?.charStream()?.readText())
+            }
+//        }
+
     }
-    private fun getSettings() {
-        var sharedPref = requireActivity()
-            .getSharedPreferences(getString(R.string.settings_file), Context.MODE_PRIVATE)
-
-        settings = SettingsDTO()
-        settings.modelUsed = SettingsDTO.TypeModel
-            .valueOf(sharedPref.getString("modelUsed", "LOCAL").toString())
-
-        settings.monitored = SettingsDTO.TypeMonitored
-            .valueOf(sharedPref.getString("monitored", "MODE_PLAIN").toString())
-
-    }
-
     private fun classifyImageLocal(image: Bitmap) {
         var model = ModelSaved.newInstance(requireContext())
         // Creates inputs for reference.
@@ -157,44 +164,55 @@ class MonitoringFragment : Fragment() {
 
         model.close()
     }
-    private fun classifyImage(image: Bitmap) {
+    private suspend fun classifyImage(image: Bitmap, index: Int) {
         if(settings.modelUsed == SettingsDTO.TypeModel.LOCAL) {
-            println("ENTROU--------------------------")
+            println("Local------------")
             var imageScaled = Bitmap.createScaledBitmap(image, imageSize, imageSize, false)
 
             classifyImageLocal(imageScaled)
         } else {
-            //TODO
+            println("Server--------------")
+            val stream = requireActivity().contentResolver.openInputStream(allImages[index])
+            val request = RequestBody.create(MediaType.parse("image/*"), stream?.readBytes())
+            var builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+            builder.addFormDataPart("file", "data.jpeg", request)
+            classifyImageInServer(builder.build())
         }
     }
 
     private fun monitoringAllImages() {
-        for(i in 0 until allImages.size) {
-            try {
-                var image = MediaStore.Images.Media.getBitmap(requireActivity().contentResolver, allImages[i]) as Bitmap
-
-                var timeBefore = Date().time
-                var batteryBefore = batteryManager.getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER)
-                classifyImage(image)
-                allTimes.add(Date().time - timeBefore)
-                allBatteryCount.add(batteryBefore - batteryManager.getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER))
-            } catch (e: IOException) {
-                e.printStackTrace()
+        GlobalScope.launch(context = Dispatchers.IO) {
+            withContext(Dispatchers.Main) {
+                binding.testButton.isEnabled = false
+                binding.progressBar.isVisible = true
+                binding.buttonSelect.isEnabled = false
             }
+            for(i in 0 until allImages.size) {
+                try {
+                    var image = MediaStore.Images.Media.getBitmap(requireActivity().contentResolver, allImages[i]) as Bitmap
+
+                    var timeBefore = Date().time
+                    var batteryBefore = batteryManager.getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER)
+
+                    classifyImage(image, i)
+
+                    allTimes.add(Date().time - timeBefore)
+                    allBatteryCount.add(batteryBefore - batteryManager.getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER))
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+            }
+            withContext(Dispatchers.Main) {
+                binding.testButton.isEnabled = true
+                binding.progressBar.isVisible = false
+                binding.buttonSelect.isEnabled = true
+            }
+            saveResults()
         }
-        saveResults()
     }
 
-    private fun runImages() = runBlocking {
-        binding.testButton.isEnabled = false
-        binding.progressBar.isVisible = true
-        binding.buttonSelect.isEnabled = false
-        GlobalScope.launch(context = Dispatchers.Main) {
-            monitoringAllImages()
-            binding.testButton.isEnabled = true
-            binding.progressBar.isVisible = false
-            binding.buttonSelect.isEnabled = false
-        }
+    private fun runImages() {
+        monitoringAllImages()
     }
 
     private fun getFileName(): String {
@@ -225,5 +243,22 @@ class MonitoringFragment : Fragment() {
                 commit()
             }
         }
+    }
+
+    private fun setSettingsInFragment() {
+        binding.monitoringModelUsedText.text = settings.modelUsed.toString()
+        binding.monitoringText.text = settings.monitored.toString()
+    }
+    private fun getSettings() {
+        var sharedPref = requireActivity()
+            .getSharedPreferences(getString(R.string.settings_file), Context.MODE_PRIVATE)
+
+        settings = SettingsDTO()
+        settings.modelUsed = SettingsDTO.TypeModel
+            .valueOf(sharedPref.getString("modelUsed", "LOCAL").toString())
+
+        settings.monitored = SettingsDTO.TypeMonitored
+            .valueOf(sharedPref.getString("monitored", "MODE_PLAIN").toString())
+
     }
 }
