@@ -7,13 +7,14 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.BatteryManager
-import android.os.BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER
+import android.os.BatteryManager.*
 import android.os.Bundle
 import android.provider.MediaStore
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
 import androidx.core.view.isVisible
 import com.example.detectmangodisease.api.IEndpoint
 import com.example.detectmangodisease.api.NetworkUtils
@@ -23,6 +24,7 @@ import com.example.detectmangodisease.dto.ResponsePredict
 import com.example.detectmangodisease.dto.SettingsDTO
 import com.example.detectmangodisease.ml.ModelSaved
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.*
 import okhttp3.MediaType
 import okhttp3.MultipartBody
@@ -40,6 +42,9 @@ import retrofit2.Callback
 import retrofit2.Response
 import retrofit2.http.Multipart
 import java.io.File
+import java.lang.reflect.Type
+import kotlin.math.abs
+import kotlin.math.round
 
 class MonitoringFragment : Fragment() {
 
@@ -59,6 +64,10 @@ class MonitoringFragment : Fragment() {
 
     private var PICK_IMAGES_CODE = 0
 
+    private var batteryBeforeSimulation = 0L
+    private var batteryAfterSimulation = 0L
+
+    private lateinit var model: ModelSaved
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -81,8 +90,13 @@ class MonitoringFragment : Fragment() {
         binding.testButton.setOnClickListener {
             runImages()
         }
+
         getSettings()
+        if(settings.modelUsed == SettingsDTO.TypeModel.LOCAL) {
+            model = ModelSaved.newInstance(requireContext())
+        }
         setSettingsInFragment()
+        setAllResultsInView()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -117,25 +131,22 @@ class MonitoringFragment : Fragment() {
         startActivityForResult(Intent.createChooser(intent, "Selecione as imagens"), PICK_IMAGES_CODE)
     }
     private suspend fun classifyImageInServer(filePart: RequestBody) {
-//        GlobalScope.launch(context = Dispatchers.IO) {
-            val retrofitClient = NetworkUtils.getRetrofitInstance(
-                "https://354a-2804-14d-1289-a118-8d1-3337-6b15-22a2.ngrok.io/api/"
-            )
+        val retrofitClient = NetworkUtils.getRetrofitInstance(
+            "http://ec2-54-163-100-211.compute-1.amazonaws.com/api/"
+        )
 
-            val endpoint = retrofitClient.create(IEndpoint::class.java)
+        val endpoint = retrofitClient.create(IEndpoint::class.java)
 
-            val response = endpoint.predictImage(filePart)
-            if(response.isSuccessful) {
-                println(response.body())
-            }
-            if(!response.isSuccessful) {
-                println(response.errorBody()?.charStream()?.readText())
-            }
-//        }
-
+        val response = endpoint.predictImage(filePart)
+        if(response.isSuccessful) {
+            println(response.body())
+        }
+        if(!response.isSuccessful) {
+            println(response.errorBody()?.charStream()?.readText())
+        }
     }
     private fun classifyImageLocal(image: Bitmap) {
-        var model = ModelSaved.newInstance(requireContext())
+//        var model = ModelSaved.newInstance(requireContext())
         // Creates inputs for reference.
         val inputFeature0 = TensorBuffer.createFixedSize(intArrayOf(1, imageSize, imageSize, 3), DataType.FLOAT32)
         val byteBuffer = ByteBuffer.allocateDirect(4 * imageSize * imageSize *3)
@@ -162,7 +173,7 @@ class MonitoringFragment : Fragment() {
 
         val confidences = outputFeature0.floatArray
 
-        model.close()
+//        model.close()
     }
     private suspend fun classifyImage(image: Bitmap, index: Int) {
         if(settings.modelUsed == SettingsDTO.TypeModel.LOCAL) {
@@ -186,18 +197,29 @@ class MonitoringFragment : Fragment() {
                 binding.testButton.isEnabled = false
                 binding.progressBar.isVisible = true
                 binding.buttonSelect.isEnabled = false
+                val imageSize = allImages.size
+                binding.progressNumber.text = "0/$imageSize"
+                batteryBeforeSimulation = batteryManager.getLongProperty(BATTERY_PROPERTY_CURRENT_NOW)
             }
             for(i in 0 until allImages.size) {
                 try {
                     var image = MediaStore.Images.Media.getBitmap(requireActivity().contentResolver, allImages[i]) as Bitmap
 
                     var timeBefore = Date().time
-                    var batteryBefore = batteryManager.getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER)
+                    var batteryBefore = abs(batteryManager.getLongProperty(BATTERY_PROPERTY_CURRENT_NOW))
 
+                    println(batteryBefore)
                     classifyImage(image, i)
 
                     allTimes.add(Date().time - timeBefore)
-                    allBatteryCount.add(batteryBefore - batteryManager.getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER))
+                    allBatteryCount.add(abs(batteryManager.getLongProperty(BATTERY_PROPERTY_CURRENT_NOW)) - batteryBefore)
+
+                    withContext(Dispatchers.Main) {
+                        val step = i + 1;
+                        val imageSize = allImages.size
+                        binding.progressNumber.text = "$step/$imageSize"
+                    }
+
                 } catch (e: IOException) {
                     e.printStackTrace()
                 }
@@ -206,8 +228,11 @@ class MonitoringFragment : Fragment() {
                 binding.testButton.isEnabled = true
                 binding.progressBar.isVisible = false
                 binding.buttonSelect.isEnabled = true
+                batteryAfterSimulation = batteryManager.getLongProperty(BATTERY_PROPERTY_CURRENT_NOW)
+
+                saveResults()
+                setAllResultsInView()
             }
-            saveResults()
         }
     }
 
@@ -227,8 +252,52 @@ class MonitoringFragment : Fragment() {
         } else {
             fileName = getString(R.string.result_three_g)
         }
+
         return fileName
     }
+
+    private fun setAllResultsInView() {
+        setResultsInView(binding.resultLatencyPlainMode, binding.resultBatteryPlainMode, getString(R.string.result_plain_mode))
+        setResultsInView(binding.resultLatencyWifi, binding.resultBatteryWifi, getString(R.string.result_wifi))
+        setResultsInView(binding.resultLatencyFourG, binding.resultBatteryFourG, getString(R.string.result_four_g))
+        setResultsInView(binding.resultLatencyThreeG, binding.resultBatteryThreeG, getString(R.string.result_three_g))
+    }
+    private fun setResultsInView(textViewTimes: TextView, textViewBatteries: TextView, fileName: String) {
+        val (resultTimes, resultBattery) = getResults(fileName)
+        if(resultTimes.size > 0) {
+            val meanTimes = String.format("%.2f",resultTimes.average())
+            textViewTimes.text = "Latência Média (ms): $meanTimes"
+        } else {
+            textViewTimes.text = "Latência Média (ms): NÃO CALCULADO"
+        }
+        if(resultTimes.size > 0) {
+//            val meanBattery = String.format("%.8f", resultBatteries.average())
+            textViewBatteries.text = "Uso de bateria (mAh): $resultBattery"
+        } else {
+            textViewBatteries.text = "Uso de bateria (mAh): NÃO CALCULADO"
+        }
+    }
+    private fun getResults(fileName: String): Pair<ArrayList<Long>, Long> {
+        var resultTimes = ArrayList<Long>()
+        var resultBattery = 0L
+        var sharedPref = requireActivity()
+            .getSharedPreferences(fileName, Context.MODE_PRIVATE)
+        if(sharedPref != null) {
+            val gson = Gson()
+
+            val resultTimesText = sharedPref.getString("times", null)
+            val resultBatteryText = sharedPref.getString("battery", null)
+            if(resultTimesText != null) {
+                resultTimes = gson.fromJson(resultTimesText, java.util.ArrayList<Long>().javaClass)
+            }
+            if(resultBatteryText != null) {
+//                resultBattery = gson.fromJson(resultBatteryText, java.util.ArrayList<Long>().javaClass)
+                resultBattery = resultBatteryText.toLong()
+            }
+        }
+        return Pair(resultTimes, resultBattery)
+    }
+
     private fun saveResults() {
         var sharedPref = requireActivity()
             .getSharedPreferences(getFileName(), Context.MODE_PRIVATE)
@@ -240,6 +309,9 @@ class MonitoringFragment : Fragment() {
             with(sharedPref.edit()) {
                 putString("times", jsonTimes)
                 putString("batteries", jsonBattery)
+                putString("battery", (batteryBeforeSimulation - batteryAfterSimulation).toString())
+                putString("batteryBefore", batteryBeforeSimulation.toString())
+                putString("batteryAfter", batteryAfterSimulation.toString())
                 commit()
             }
         }
@@ -261,4 +333,12 @@ class MonitoringFragment : Fragment() {
             .valueOf(sharedPref.getString("monitored", "MODE_PLAIN").toString())
 
     }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        if(::model.isInitialized) {
+            model.close()
+        }
+    }
 }
+
