@@ -4,6 +4,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:keepScreenOn="true"
     android:background="@color/gray"
     tools:context=".MonitoringFragment">
 
@@ -60,15 +61,32 @@
                 android:fontFamily="@font/lt_asus_bold"
                 android:textSize="16dp" />
 
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/lt_asus_bold"
+                android:text="Quantidade de vezes:"
+                android:textColor="@color/orange_strong"
+                android:textSize="20dp" />
+
+            <EditText
+                android:id="@+id/amount_tests"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ems="10"
+                android:text="10"
+                android:inputType="number" />
+
         </LinearLayout>
 
 
         <Button
             android:id="@+id/button_select"
             android:layout_width="wrap_content"
-            android:layout_height="50dp"
+            android:layout_height="40dp"
             android:background="@drawable/bg_gradient_soft"
             android:text="Selecionar"
+            android:textSize="12dp"
             android:layout_marginLeft="20dp"
             app:backgroundTint="@null"
             app:layout_constraintStart_toStartOf="parent"
@@ -101,26 +119,28 @@
 
             <Button
                 android:id="@+id/test_button"
-                android:layout_width="150dp"
-                android:layout_height="50dp"
+                android:layout_width="120dp"
+                android:textSize="12dp"
+                android:layout_height="40dp"
                 android:background="@drawable/bg_gradient"
                 android:text="Testar"
                 app:backgroundTint="@null"
                 />
 
             <ProgressBar
-                android:layout_width="30dp"
+                android:layout_width="20dp"
                 android:layout_height="wrap_content"
                 android:id="@+id/progressBar"
                 android:layout_gravity="right"
                 android:indeterminate="true"
-                android:elevation="20dp"
+                android:elevation="10dp"
                 android:visibility="invisible"
                 tools:visibility="visible"
                 android:layout_marginRight="5dp"
                 android:indeterminateTint="@color/gray"
                 android:layout_alignTop="@+id/test_button"
                 android:layout_alignRight="@+id/test_button"
+                android:layout_alignBottom="@id/test_button"
                 android:layout_alignEnd="@+id/test_button" />
         </RelativeLayout>
 

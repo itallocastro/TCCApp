@@ -60,12 +60,10 @@ class MonitoringFragment : Fragment() {
 
 
     private var allTimes = ArrayList<Long>()
-    private var allBatteryCount = ArrayList<Long>()
 
     private var PICK_IMAGES_CODE = 0
 
-    private var batteryBeforeSimulation = 0L
-    private var batteryAfterSimulation = 0L
+    private var batteryHashMap = hashMapOf<String, Long>("beforeAmps" to 0L, "beforePercent" to 0L, "afterAmps" to 0L, "afterPercent" to 0L)
 
     private lateinit var model: ModelSaved
     override fun onCreateView(
@@ -131,18 +129,22 @@ class MonitoringFragment : Fragment() {
         startActivityForResult(Intent.createChooser(intent, "Selecione as imagens"), PICK_IMAGES_CODE)
     }
     private suspend fun classifyImageInServer(filePart: RequestBody) {
-        val retrofitClient = NetworkUtils.getRetrofitInstance(
-            "http://ec2-54-163-100-211.compute-1.amazonaws.com/api/"
-        )
 
-        val endpoint = retrofitClient.create(IEndpoint::class.java)
+        try {
+            val retrofitClient = NetworkUtils.getRetrofitInstance(
+                "http://ec2-3-83-154-142.compute-1.amazonaws.com/api/"
+            )
+            val endpoint = retrofitClient.create(IEndpoint::class.java)
 
-        val response = endpoint.predictImage(filePart)
-        if(response.isSuccessful) {
-            println(response.body())
-        }
-        if(!response.isSuccessful) {
-            println(response.errorBody()?.charStream()?.readText())
+            val response = endpoint.predictImage(filePart)
+            if(response.isSuccessful) {
+                println(response.body())
+            }
+            if(!response.isSuccessful) {
+                println(response.errorBody()?.charStream()?.readText())
+            }
+        } catch (e: java.lang.Exception) {
+            println(e)
         }
     }
     private fun classifyImageLocal(image: Bitmap) {
@@ -177,15 +179,14 @@ class MonitoringFragment : Fragment() {
     }
     private suspend fun classifyImage(image: Bitmap, index: Int) {
         if(settings.modelUsed == SettingsDTO.TypeModel.LOCAL) {
-            println("Local------------")
             var imageScaled = Bitmap.createScaledBitmap(image, imageSize, imageSize, false)
 
             classifyImageLocal(imageScaled)
         } else {
-            println("Server--------------")
             val stream = requireActivity().contentResolver.openInputStream(allImages[index])
             val request = RequestBody.create(MediaType.parse("image/*"), stream?.readBytes())
             var builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+
             builder.addFormDataPart("file", "data.jpeg", request)
             classifyImageInServer(builder.build())
         }
@@ -193,45 +194,49 @@ class MonitoringFragment : Fragment() {
 
     private fun monitoringAllImages() {
         GlobalScope.launch(context = Dispatchers.IO) {
+            val total = allImages.size * binding.amountTests.text.toString().toInt()
+
             withContext(Dispatchers.Main) {
                 binding.testButton.isEnabled = false
                 binding.progressBar.isVisible = true
                 binding.buttonSelect.isEnabled = false
-                val imageSize = allImages.size
-                binding.progressNumber.text = "0/$imageSize"
-                batteryBeforeSimulation = batteryManager.getLongProperty(BATTERY_PROPERTY_CURRENT_NOW)
+                binding.amountTests.isEnabled = false
+                binding.progressNumber.text = "0/${total}"
+                batteryHashMap["beforeAmps"] = batteryManager.getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER)
+                batteryHashMap["beforePercent"] = batteryManager.getLongProperty(BATTERY_PROPERTY_CAPACITY)
             }
-            for(i in 0 until allImages.size) {
-                try {
-                    var image = MediaStore.Images.Media.getBitmap(requireActivity().contentResolver, allImages[i]) as Bitmap
+            var currentStep = 0
+            for (k in 0 until binding.amountTests.text.toString().toInt()) {
+                for(i in 0 until allImages.size) {
+                    try {
+                        var image = MediaStore.Images.Media.getBitmap(requireActivity().contentResolver, allImages[i]) as Bitmap
 
-                    var timeBefore = Date().time
-                    var batteryBefore = abs(batteryManager.getLongProperty(BATTERY_PROPERTY_CURRENT_NOW))
+                        var timeBefore = Date().time
 
-                    println(batteryBefore)
-                    classifyImage(image, i)
+                        classifyImage(image, i)
 
-                    allTimes.add(Date().time - timeBefore)
-                    allBatteryCount.add(abs(batteryManager.getLongProperty(BATTERY_PROPERTY_CURRENT_NOW)) - batteryBefore)
+                        allTimes.add(Date().time - timeBefore)
 
-                    withContext(Dispatchers.Main) {
-                        val step = i + 1;
-                        val imageSize = allImages.size
-                        binding.progressNumber.text = "$step/$imageSize"
+                        currentStep++
+                        withContext(Dispatchers.Main) {
+                            println(currentStep)
+                            binding.progressNumber.text = "$currentStep/$total"
+                        }
+
+                    } catch (e: IOException) {
+                        e.printStackTrace()
                     }
-
-                } catch (e: IOException) {
-                    e.printStackTrace()
                 }
             }
             withContext(Dispatchers.Main) {
                 binding.testButton.isEnabled = true
                 binding.progressBar.isVisible = false
                 binding.buttonSelect.isEnabled = true
-                batteryAfterSimulation = batteryManager.getLongProperty(BATTERY_PROPERTY_CURRENT_NOW)
-
-                saveResults()
-                setAllResultsInView()
+                binding.amountTests.isEnabled = true
+//                batteryHashMap["afterAmps"] = batteryManager.getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER)
+//                batteryHashMap["afterPercent"] = batteryManager.getLongProperty(BATTERY_PROPERTY_CAPACITY)
+//                saveResults()
+//                setAllResultsInView()
             }
         }
     }
@@ -286,12 +291,11 @@ class MonitoringFragment : Fragment() {
             val gson = Gson()
 
             val resultTimesText = sharedPref.getString("times", null)
-            val resultBatteryText = sharedPref.getString("battery", null)
+            val resultBatteryText = sharedPref.getString("batteryAmps", null)
             if(resultTimesText != null) {
                 resultTimes = gson.fromJson(resultTimesText, java.util.ArrayList<Long>().javaClass)
             }
             if(resultBatteryText != null) {
-//                resultBattery = gson.fromJson(resultBatteryText, java.util.ArrayList<Long>().javaClass)
                 resultBattery = resultBatteryText.toLong()
             }
         }
@@ -304,14 +308,14 @@ class MonitoringFragment : Fragment() {
         if(sharedPref != null) {
             val gson = Gson()
             val jsonTimes = gson.toJson(allTimes)
-            val jsonBattery = gson.toJson(allBatteryCount)
 
             with(sharedPref.edit()) {
                 putString("times", jsonTimes)
-                putString("batteries", jsonBattery)
-                putString("battery", (batteryBeforeSimulation - batteryAfterSimulation).toString())
-                putString("batteryBefore", batteryBeforeSimulation.toString())
-                putString("batteryAfter", batteryAfterSimulation.toString())
+                putString("batteryAmps", (batteryHashMap.getValue("beforeAmps") - batteryHashMap.getValue("afterAmps")).toString())
+                putString("batteryBeforeAmps", batteryHashMap["beforeAmps"].toString())
+                putString("batteryBeforePercent", batteryHashMap["beforePercent"].toString())
+                putString("batteryAfterAmps", batteryHashMap["afterAmps"].toString())
+                putString("batteryAfterPercent", batteryHashMap["afterPercent"].toString())
                 commit()
             }
         }
